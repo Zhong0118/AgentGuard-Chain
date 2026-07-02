@@ -50,6 +50,28 @@ class PolicyEngine:
                 )
             )
 
+        # 写入/编辑/删除是单独权限。即使工具在白名单里，也必须显式允许写操作。
+        if event.tool_name in {"write_file", "edit_file", "delete_file"} and not event.task_scope.write_allowed:
+            findings.append(
+                PolicyFinding(
+                    rule_id="WRITE_NOT_ALLOWED",
+                    risk_type="write_not_allowed",
+                    severity="critical",
+                    reason=f"当前任务范围是只读任务，不允许执行 {event.tool_name}。",
+                )
+            )
+
+        # 删除是不可逆动作。即使任务允许写操作，P1 也先要求用户确认。
+        if event.tool_name == "delete_file" and event.task_scope.write_allowed:
+            findings.append(
+                PolicyFinding(
+                    rule_id="DELETE_REQUIRES_CONFIRMATION",
+                    risk_type="delete_requires_confirmation",
+                    severity="medium",
+                    reason="删除文件属于中风险不可逆操作，需要用户确认。",
+                )
+            )
+
         if event.tool_name in {"bash", "run_command"}:
             findings.extend(self._evaluate_command_allowlist(event))
 

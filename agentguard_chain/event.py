@@ -63,6 +63,7 @@ class GuardDecision:
     risk_types: list[str] = field(default_factory=list)
     matched_rules: list[str] = field(default_factory=list)
     chain_alerts: list[dict[str, Any]] = field(default_factory=list)
+    chain_graphs: list[dict[str, Any]] = field(default_factory=list)
     reason: str = ""
     llm_explanation: str | None = None
 
@@ -80,6 +81,10 @@ class AuditRecord:
     result_preview: str = ""
     exit_code: int | None = None
     duration_ms: int | None = None
+    input_findings: list[dict[str, Any]] = field(default_factory=list)
+    output_findings: list[dict[str, Any]] = field(default_factory=list)
+    redaction: dict[str, Any] = field(default_factory=dict)
+    approval: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -91,4 +96,16 @@ class AuditRecord:
                 "exit_code": self.exit_code,
                 "duration_ms": self.duration_ms,
             },
+            "input_findings": self.input_findings,
+            "approval": self.approval
+            or {
+                "required": False,
+                "mode": "none",
+                "decision": "not_required",
+                "execute": self.executed,
+                "operator": "system",
+                "reason": "",
+            },
+            "output_findings": self.output_findings,
+            "redaction": self.redaction or {"applied": False, "redacted_types": []},
         }

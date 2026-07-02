@@ -87,6 +87,8 @@ class ParameterChecker:
 
     FILE_TOOLS = {"read_file", "write_file", "edit_file", "delete_file"}
     COMMAND_TOOLS = {"bash", "run_command"}
+    API_TOOLS = {"call_api"}
+    SEND_TOOLS = {"send_message", "send_mail"}
 
     def check(self, event: ToolCallEvent) -> list[PolicyFinding]:
         findings: list[PolicyFinding] = []
@@ -94,6 +96,10 @@ class ParameterChecker:
             findings.extend(self._check_file_access(event))
         if event.tool_name in self.COMMAND_TOOLS:
             findings.extend(self._check_command(event))
+        if event.tool_name in self.API_TOOLS:
+            findings.extend(self._check_api_call(event))
+        if event.tool_name in self.SEND_TOOLS:
+            findings.extend(self._check_external_send(event))
         return findings
 
     def _check_file_access(self, event: ToolCallEvent) -> list[PolicyFinding]:
@@ -149,6 +155,38 @@ class ParameterChecker:
                     )
                 )
         return findings
+
+    def _check_api_call(self, event: ToolCallEvent) -> list[PolicyFinding]:
+        findings: list[PolicyFinding] = []
+        params = event.tool_args.get("params", {})
+        user_id = str(params.get("user_id", "current_user")) if isinstance(params, dict) else ""
+
+        # P1 mock API 只允许 current_user，防止越权查询 admin/other_user。
+        if user_id and user_id != "current_user":
+            findings.append(
+                PolicyFinding(
+                    rule_id="API_USER_SCOPE_VIOLATION",
+                    risk_type="api_authz_violation",
+                    severity="critical",
+                    reason=f"API 调用尝试访问非当前用户 user_id={user_id}。",
+                )
+            )
+        return findings
+
+    def _check_external_send(self, event: ToolCallEvent) -> list[PolicyFinding]:
+        target = str(event.tool_args.get("target") or event.tool_args.get("to") or "")
+        if event.task_scope.external_send_allowed:
+            return []
+        if re.search(r"https?://|webhook|@", target, flags=re.IGNORECASE):
+            return [
+                PolicyFinding(
+                    rule_id="EXTERNAL_SEND_NOT_ALLOWED",
+                    risk_type="external_send_not_allowed",
+                    severity="critical",
+                    reason=f"当前任务范围不允许发送到外部目标 {target}。",
+                )
+            ]
+        return []
 
     def _check_command(self, event: ToolCallEvent) -> list[PolicyFinding]:
         findings: list[PolicyFinding] = []

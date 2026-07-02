@@ -22,7 +22,15 @@ class RiskScorer:
     用户确认通道；后续阶段可以把部分 high 风险改成 ask。
     """
 
-    def score(self, event: ToolCallEvent, policy_result: PolicyResult) -> GuardDecision:
+    def score(
+        self,
+        event: ToolCallEvent,
+        policy_result: PolicyResult,
+        chain_alerts: list[dict] | None = None,
+        chain_graphs: list[dict] | None = None,
+    ) -> GuardDecision:
+        chain_alerts = chain_alerts or []
+        chain_graphs = chain_graphs or []
         if not policy_result.findings:
             return GuardDecision(
                 event_id=event.event_id,
@@ -31,6 +39,8 @@ class RiskScorer:
                 risk_level=LOW,
                 risk_types=[],
                 matched_rules=[],
+                chain_alerts=chain_alerts,
+                chain_graphs=chain_graphs,
                 reason="工具调用位于当前 P0 任务范围内，未命中高危规则。",
             )
 
@@ -45,6 +55,8 @@ class RiskScorer:
             risk_level=risk_level,
             risk_types=policy_result.risk_types,
             matched_rules=policy_result.rule_ids,
+            chain_alerts=chain_alerts,
+            chain_graphs=chain_graphs,
             reason=" ".join(policy_result.reasons),
         )
 
