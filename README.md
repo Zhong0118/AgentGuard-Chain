@@ -32,7 +32,7 @@ Dashboard
 - 人工确认：支持 `allow / ask / deny`，`ask` 可走自动拒绝、自动允许或交互确认；`interactive-all` 可对每个非硬阻断工具调用进行确认。
 - 结果审查与脱敏：审查工具返回内容中的密钥、密码、token 等敏感信息。
 - 审计留证：以 JSONL 记录 `ToolCallEvent`、`GuardDecision`、执行结果和解释。
-- Dashboard 展示：展示指标、告警、风险链、审批记录和 mock outbox。
+- Dashboard 展示：展示指标、告警、风险链、审批记录和本地 outbox。
 
 ## 当前实现状态
 
@@ -41,7 +41,7 @@ Dashboard
 | P0 安全网关 | 已完成 |
 | MiniAgent scripted mode | 已完成，用于可复现实验 |
 | MiniAgent LLM mode | 已完成，支持 OpenAI-compatible API |
-| CoreCoder guarded scripted demo | 已完成，离线可运行 |
+| CoreCoder guarded 离线回放 | 已完成，离线可运行 |
 | CoreCoder guarded real mode | 已完成入口，并已用 DeepSeek v4 flash 验证 |
 | LLM risk explainer | 已完成 template / LLM 两种模式 |
 | Dashboard | 已完成基础演示版 |
@@ -128,7 +128,7 @@ $env:MINIAGENT_MODEL="deepseek-v4-flash"
 python -m agents.miniagent.run_case --mode llm --prompt "请读取 workflow.md 并总结项目目标" --audit-log logs/deepseek_miniagent_llm_audit.jsonl --workspace-root . --approval-mode auto-deny
 ```
 
-运行 CoreCoder guarded scripted demo：
+运行 CoreCoder guarded 离线回放：
 
 ```powershell
 python -m agents.corecoder_guarded_runner --mode scripted --demo normal-read --audit-log logs/corecoder_guarded_audit.jsonl --workspace-root . --approval-mode auto-deny
@@ -176,7 +176,7 @@ python -m experiments.explain_audit_log --input logs/p1_miniagent_audit.jsonl --
 
 - `scripted` 用于稳定复现和指标评估，不依赖网络。
 - `llm` / `real` 用于真实 LLM 生成工具调用或解释，需要 API key。
-- `mock outbox` 只写入 `logs/outbox/*.jsonl`，不做真实 SMTP/webhook/API 外发。
+- `本地 outbox` 只写入 `logs/outbox/*.jsonl`，不做真实 SMTP/webhook/API 外发。
 - LLM risk explainer 只生成解释，不参与 `allow / ask / deny` 硬决策。
 - `interactive` 只在 `ask` 决策时请求 CLI 确认；`interactive-all` 会对每个非硬阻断工具调用请求 CLI 确认。
 - CoreCoder 原生 CLI 不会自动接入 AgentGuard，必须使用 `agents.corecoder_guarded_runner` 或修改工具执行入口。
@@ -189,4 +189,4 @@ python -m experiments.explain_audit_log --input logs/p1_miniagent_audit.jsonl --
 - `docs/final-report.md`：最终报告。
 - `docs/validation.md`：验证记录。
 - `docs/code-structure.md`：代码结构说明。
-- `docs/boundary-check.md`：scripted / LLM / real / mock 边界检查。
+- `docs/boundary-check.md`：scripted / LLM / real / local outbox 边界检查。

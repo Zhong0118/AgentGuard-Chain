@@ -63,7 +63,7 @@ AuditLogger
 | --- | --- |
 | `agents/miniagent/agent.py` | MiniAgent 核心循环：planner -> guard -> approval -> tool executor -> result inspection -> audit -> summary。 |
 | `agents/miniagent/llm_planner.py` | OpenAI-compatible LLM planner，只允许模型返回 JSON `tool_calls`。 |
-| `agents/miniagent/tools.py` | MiniAgent 的本地工具集合，包括文件读写、命令执行、mock API/message/mail outbox。 |
+| `agents/miniagent/tools.py` | MiniAgent 的本地工具集合，包括文件读写、命令执行、本地 API/message/mail outbox。 |
 | `agents/miniagent/run_case.py` | MiniAgent CLI 主入口，支持 `scripted` 和 `llm` 两种模式。 |
 | `agents/corecoder_guarded_runner.py` | CoreCoder guarded 入口，证明真实开源 Agent 可以在工具执行前接入 AgentGuard。 |
 | `agentguard_chain/adapter/corecoder_adapter.py` | CoreCoder 工具调用适配器，把 CoreCoder 的工具调用转成 AgentGuard 可审查的事件。 |
@@ -79,8 +79,8 @@ MiniAgent 工具边界：
 
 ```text
 read_file / write_file / delete_file / bash 属于本地真实工具。
-send_message / send_mail / call_api 目前是 mock outbox，只写入 logs/outbox/*.jsonl。
-mock outbox 的目的不是伪装成真实业务系统，而是安全展示“外发动作会被审计、阻断或记录”。
+send_message / send_mail / call_api 目前是本地 outbox，只写入 logs/outbox/*.jsonl。
+本地 outbox 的目的不是伪装成真实业务系统，而是安全展示“外发动作会被审计、阻断或记录”。
 后续如果要接真实 webhook / SMTP / API，应优先保留同样的 ToolCallEvent 和 AgentGuardGateway 链路。
 ```
 

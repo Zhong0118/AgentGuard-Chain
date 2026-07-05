@@ -1,7 +1,7 @@
-"""Mini-Agent mock tools.
+"""Mini-Agent local tools.
 
-这些工具只用于可控实验。真实安全边界仍然是 AgentGuardGateway；
-只有网关返回 allow 时，runner 才会执行这里的 mock tool。
+文件读写和命令执行会在本地 workspace 内真实运行。
+API、消息和邮件工具写入本地 outbox 队列，不访问外部网络。
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from uuid import uuid4
 
 
 class MiniAgentTools:
-    """一组最小 mock 工具，用于 scripted mode。"""
+    """MiniAgent 的本地工具集合，所有调用都必须先通过 AgentGuard。"""
 
     def __init__(self, workspace_root: Path):
         self.workspace_root = workspace_root.resolve()
@@ -83,7 +83,7 @@ class MiniAgentTools:
             "params": params,
             "user_id": user_id,
             "status": "ok",
-            "mocked": True,
+            "transport": "local_outbox",
         }
         self._append_outbox("api_call_log.jsonl", record)
         return json.dumps(
@@ -146,7 +146,7 @@ class MiniAgentTools:
         return candidate.resolve()
 
     def _append_outbox(self, filename: str, record: dict[str, Any]) -> None:
-        # outbox 是模拟外发系统的落盘队列，便于审计日志通过 outbox_id 追溯。
+        # outbox 是本地落盘队列，便于审计日志通过 outbox_id 追溯外发意图。
         outbox_dir = self.workspace_root / "logs" / "outbox"
         outbox_dir.mkdir(parents=True, exist_ok=True)
         with (outbox_dir / filename).open("a", encoding="utf-8") as handle:

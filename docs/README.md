@@ -6,7 +6,7 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| `runbook.md` | 项目运行手册，说明 MiniAgent、CoreCoder guarded demo、评估脚本和 Dashboard 的启动方式。 |
+| `runbook.md` | 项目运行手册，说明 MiniAgent、CoreCoder guarded 离线回放、评估脚本和 Dashboard 的启动方式。 |
 | `usage-and-demo-guide.md` | 面向演示和答辩的完整使用流程，解释输入审查、工具调用审查、输出审查、风险链和人工确认。 |
 | `validation.md` | 当前可复现验证记录，汇总离线测试、DeepSeek API 实测、CoreCoder guarded real demo 和 Dashboard 状态。 |
 | `demo-script.md` | 演示脚本，按场景说明如何展示攻击、拦截、日志和指标。 |
@@ -14,7 +14,7 @@
 | `report-outline.md` | 报告提纲，用于后续整理比赛提交材料。 |
 | `code-structure.md` | 代码结构说明，区分可复用框架、Agent 适配、实验脚本和展示层。 |
 | `cleanup-inventory.md` | 阶段 A/B 清单，记录文件盘点、保留/清理策略和本轮清理结果。 |
-| `boundary-check.md` | 阶段 D 检查记录，说明 scripted/LLM/real/mock 边界和本轮修复。 |
+| `boundary-check.md` | 阶段 D 检查记录，说明 scripted/LLM/real/local outbox 边界和本轮修复。 |
 
 ## 产物目录
 

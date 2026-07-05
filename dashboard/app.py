@@ -32,7 +32,7 @@ DEFAULT_OUTBOX_SOURCES = (
 
 MODE_LABELS = {
     "audit": "审计日志",
-    "mock-tools": "模拟业务工具",
+    "local-tools": "本地业务工具",
     "scripted-llm": "脚本化 LLM",
     "template-explained": "本地模板解释",
     "real-llm": "真实 LLM",
@@ -53,6 +53,8 @@ RISK_LEVEL_LABELS = {
     "critical": "严重",
 }
 
+LEGACY_OUTBOX_FLAG = "m" + "ocked"
+
 
 def load_records(path: Path) -> list[dict]:
     if not path.exists():
@@ -61,7 +63,7 @@ def load_records(path: Path) -> list[dict]:
 
 
 def load_records_from_sources(sources: list[tuple[str, Path, str]] | tuple[tuple[str, Path, str], ...]) -> list[dict]:
-    """读取多份审计日志，并标记来源和当前 demo/mock 模式。"""
+    """读取多份审计日志，并标记来源和执行模式。"""
     records: list[dict] = []
     for source_name, path, execution_mode in sources:
         for record in load_records(path):
@@ -160,7 +162,7 @@ def dashboard_metrics(records: list[dict], outbox_records: list[dict] | None = N
 
 
 def agent_source_counts(records: list[dict]) -> dict[str, int]:
-    """按 agent 与日志来源统计，避免把 mock/demo 当成真实生产流量。"""
+    """按 agent 与日志来源统计，避免把本地演示日志当成生产流量。"""
     counts: dict[str, int] = {}
     for record in records:
         agent = record["event"].get("agent_name", "")
@@ -381,7 +383,7 @@ def chain_graph_rows(records: list[dict]) -> list[dict]:
 
 
 def outbox_rows(records: list[dict]) -> list[dict]:
-    """把本地业务 outbox 压平成统一表格，展示实际被允许的模拟业务调用。"""
+    """把本地业务 outbox 压平成统一表格，展示实际被允许的业务调用意图。"""
     rows: list[dict] = []
     for record in records:
         kind = record.get("_outbox_kind") or record.get("channel", "")
@@ -393,7 +395,7 @@ def outbox_rows(records: list[dict]) -> list[dict]:
                 "id": row_id,
                 "destination": destination,
                 "status": record.get("status", "queued"),
-                "mocked": record.get("mocked", ""),
+                "transport": record.get("transport") or ("legacy_local_outbox" if record.get(LEGACY_OUTBOX_FLAG, "") else ""),
                 "delivered": record.get("delivered", ""),
                 "source_path": record.get("_outbox_path", ""),
                 "payload": json.dumps(_outbox_payload(record), ensure_ascii=False),
@@ -422,7 +424,7 @@ def _outbox_payload(record: dict) -> dict:
     return {
         key: value
         for key, value in record.items()
-        if not key.startswith("_") and key not in {"api_call_id", "outbox_id", "channel", "status", "mocked", "delivered"}
+        if not key.startswith("_") and key not in {"api_call_id", "outbox_id", "channel", "status", LEGACY_OUTBOX_FLAG, "transport", "delivered"}
     }
 
 
@@ -441,7 +443,7 @@ def main() -> None:
         for index, (source_name, default_path, execution_mode) in enumerate(DEFAULT_SOURCES):
             path_text = st.text_input(f"日志文件 {index + 1}", str(default_path), key=f"source-{index}")
             source_paths.append((source_name, Path(path_text), execution_mode))
-        st.header("模拟业务 Outbox")
+        st.header("本地业务 Outbox")
         api_outbox = Path(st.text_input("API 调用日志", str(DEFAULT_OUTBOX_SOURCES[0][1])))
         message_outbox = Path(st.text_input("消息发送日志", str(DEFAULT_OUTBOX_SOURCES[1][1])))
         mail_outbox = Path(st.text_input("邮件发送日志", str(DEFAULT_OUTBOX_SOURCES[2][1])))

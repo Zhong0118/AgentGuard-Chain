@@ -27,7 +27,7 @@ class MiniAgentOutboxToolTests(unittest.TestCase):
             self.assertEqual(rows[0]["api_call_id"], payload["api_call_id"])
             self.assertEqual(rows[0]["endpoint"], "/orders")
             self.assertEqual(rows[0]["params"], {"user_id": "current_user"})
-            self.assertTrue(rows[0]["mocked"])
+            self.assertEqual(rows[0]["transport"], "local_outbox")
 
     def test_send_message_writes_file_outbox_with_id(self):
         with tempfile.TemporaryDirectory() as temp:

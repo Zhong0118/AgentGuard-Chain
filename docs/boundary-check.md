@@ -1,6 +1,6 @@
 # 阶段 D：代码边界检查
 
-本文档记录 scripted / LLM / real / mock 的边界检查结果。
+本文档记录 scripted / LLM / real / local outbox 的边界检查结果。
 
 ## 1. 检查范围
 
@@ -12,7 +12,7 @@
 | CoreCoder real | 使用 CoreCoder 真实 LLM 配置生成工具调用，需要 API key/base_url/model。 |
 | Risk explainer template | 本地模板解释，不需要 API key，输出到 `logs/p2_explained_audit.jsonl`。 |
 | Risk explainer llm | 使用 OpenAI-compatible API 生成解释，输出到 `logs/deepseek_explained_audit.jsonl`。 |
-| Dashboard source label | 已区分 `template-explained`、`llm-explained`、`scripted-llm`、`real-llm`、`mock-tools`。 |
+| Dashboard source label | 已区分 `template-explained`、`llm-explained`、`scripted-llm`、`real-llm`、`local-tools`。 |
 | generate_demo_data 默认行为 | 默认只生成离线可重建日志，不再覆盖真实 LLM 证据日志。 |
 
 ## 2. 本轮发现的问题
@@ -94,7 +94,7 @@ OK
 ```text
 scripted = 可复现实验，不依赖网络。
 llm/real = 真实 LLM 生成工具调用或解释，需要 API key。
-mock outbox = 模拟业务外发，只写 logs/outbox，不做真实 SMTP/webhook/API。
+local outbox = 本地业务外发队列，只写 logs/outbox，不做真实 SMTP/webhook/API。
 template explainer = 本地解释，不是 LLM。
 DeepSeek explainer = 真实 LLM 解释。
 ```

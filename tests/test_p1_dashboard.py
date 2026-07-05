@@ -160,14 +160,14 @@ class DashboardDataTests(unittest.TestCase):
 
             records = load_records_from_sources(
                 [
-                    ("miniagent-scripted", mini_log, "mock-tools"),
+                    ("miniagent-scripted", mini_log, "local-tools"),
                     ("corecoder-guarded-demo", core_log, "scripted-llm"),
                 ]
             )
 
         self.assertEqual(len(records), 2)
         self.assertEqual(records[0]["_source"], "miniagent-scripted")
-        self.assertEqual(records[0]["_execution_mode"], "mock-tools")
+        self.assertEqual(records[0]["_execution_mode"], "local-tools")
         self.assertEqual(records[1]["_source"], "corecoder-guarded-demo")
         self.assertEqual(agent_source_counts(records)["miniagent|miniagent-scripted"], 1)
         self.assertEqual(agent_source_counts(records)["corecoder|corecoder-guarded-demo"], 1)
@@ -181,7 +181,7 @@ class DashboardDataTests(unittest.TestCase):
             message_log = tmpdir / "message_outbox.jsonl"
             mail_log = tmpdir / "mail_outbox.jsonl"
             api_log.write_text(
-                '{"api_call_id":"api-1","channel":"api","endpoint":"/orders","params":{"user_id":"current_user"},"status":"ok","mocked":true}\n',
+                '{"api_call_id":"api-1","channel":"api","endpoint":"/orders","params":{"user_id":"current_user"},"status":"ok","transport":"local_outbox"}\n',
                 encoding="utf-8",
             )
             message_log.write_text(
@@ -217,7 +217,7 @@ class DashboardDataTests(unittest.TestCase):
         records = [
             {
                 "_source": "miniagent-scripted",
-                "_execution_mode": "mock-tools",
+                "_execution_mode": "local-tools",
                 "event": {
                     "event_id": "evt-1",
                     "timestamp": "t1",
@@ -270,7 +270,7 @@ class DashboardDataTests(unittest.TestCase):
             },
             {
                 "_source": "miniagent-scripted",
-                "_execution_mode": "mock-tools",
+                "_execution_mode": "local-tools",
                 "event": {
                     "event_id": "evt-3",
                     "timestamp": "t3",

@@ -55,7 +55,7 @@
 | `logs/p1_v2_eval.json` | 评估结果，已固化到 `artifacts/eval/`，也可重建。 |
 | `logs/p2_explained_audit.jsonl` | template 解释日志，可重建。 |
 | `logs/p1_interactive_demo_audit.jsonl` | 交互演示运行日志，可重建。 |
-| `logs/outbox/*.jsonl` | mock API/message/mail outbox，可重建。 |
+| `logs/outbox/*.jsonl` | 本地 API/message/mail outbox，可重建。 |
 | `__pycache__/` | Python 缓存，已被 `.gitignore` 忽略。 |
 
 ### 1.4 需要合并

@@ -161,7 +161,7 @@ class ParameterChecker:
         params = event.tool_args.get("params", {})
         user_id = str(params.get("user_id", "current_user")) if isinstance(params, dict) else ""
 
-        # P1 mock API 只允许 current_user，防止越权查询 admin/other_user。
+        # P1 本地 API outbox 只允许 current_user，防止越权查询 admin/other_user。
         if user_id and user_id != "current_user":
             findings.append(
                 PolicyFinding(

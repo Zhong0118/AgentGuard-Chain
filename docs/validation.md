@@ -36,7 +36,7 @@ AuditLogger 写入 JSONL
 已验证内容：
 
 ```text
-CoreCoder guarded scripted demo 已实测。
+CoreCoder guarded 离线回放已实测。
 normal-read       -> allow / executed=true
 sensitive-file    -> deny / executed=false / SENSITIVE_PATH
 dangerous-command -> deny / executed=false / COMMAND_NOT_ALLOWED + CMD_PIPE_TO_SHELL + NETWORK_NOT_ALLOWED

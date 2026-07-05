@@ -13,7 +13,7 @@
 核心问题：提示注入和越权任务会诱导 Agent 误用工具
 方法：AgentGuard-Chain 可嵌入/旁路双模式行为监督框架
 能力：输入标注、工具调用前审查、结果审查、输出脱敏、行为链检测、审计展示
-实验：P1 scripted adversarial dataset + CoreCoder guarded demo
+实验：P1 scripted adversarial dataset + CoreCoder guarded 离线回放
 结论：工具调用前拦截和行为链检测比单纯输入过滤更有效
 ```
 

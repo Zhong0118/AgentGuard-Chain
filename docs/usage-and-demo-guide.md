@@ -12,7 +12,7 @@
 P0/P1 原型闭环可运行
 MiniAgent scripted 数据集可批量评估
 MiniAgent LLM mode 可通过 OpenAI-compatible API 生成 JSON tool_calls
-CoreCoder guarded scripted demo 可离线演示
+CoreCoder guarded 离线回放可离线演示
 CoreCoder guarded real LLM runner 已有入口，但真实运行需要 API key、base_url/model 和 openai SDK
 Dashboard 能展示审计日志、风险链、审批记录和业务 outbox
 LLM risk explainer 已支持 template / OpenAI-compatible LLM 解释模式
@@ -150,7 +150,7 @@ false_positive_rate = 0.0
 false_negative_rate = 0.0
 ```
 
-### 3.3 运行 CoreCoder guarded scripted demo
+### 3.3 运行 CoreCoder guarded 离线回放
 
 ```powershell
 Clear-Content -Path logs\corecoder_guarded_audit.jsonl

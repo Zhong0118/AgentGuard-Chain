@@ -115,7 +115,7 @@ powershell -EncodedCommand ...
 
 - `TaskScope` 限定当前用户范围。
 - API 参数检测。
-- 只允许符合任务范围的 mock API 调用写入 outbox。
+- 只允许符合任务范围的本地 API 调用写入 outbox。
 
 ### 4.4 敏感信息外传行为链
 
@@ -232,7 +232,7 @@ MiniAgent 用于可控实验和批量评估，支持两种模式：
 | `scripted` | 读取 JSONL 中的预设 tool calls，稳定计算检测率、误报率、漏报率。 |
 | `llm` | 调用 OpenAI-compatible API，让真实 LLM 输出 JSON tool calls。 |
 
-MiniAgent 工具包含本地真实文件/命令工具和 mock 业务工具。`send_message`、`send_mail`、`call_api` 只写入 `logs/outbox/*.jsonl`，不执行真实外发。
+MiniAgent 工具包含本地真实文件/命令工具和本地业务 outbox。`send_message`、`send_mail`、`call_api` 只写入 `logs/outbox/*.jsonl`，不执行真实外发。
 
 ### 6.2 CoreCoder
 
@@ -256,7 +256,7 @@ Dashboard 默认读取多类审计源，并标记执行模式：
 
 | 来源 | 模式 |
 | --- | --- |
-| `miniagent-scripted` | `mock-tools` |
+| `miniagent-scripted` | `local-tools` |
 | `corecoder-guarded-demo` | `scripted-llm` |
 | `risk-explainer-template` | `template-explained` |
 | `miniagent-deepseek-real` | `real-llm` |
@@ -382,7 +382,7 @@ python -m streamlit run dashboard/app.py --server.address 127.0.0.1 --server.por
 当前系统是比赛原型，不是生产级安全平台。主要边界如下：
 
 - 规则和行为链检测是当前硬决策核心，LLM 解释器不参与安全决策。
-- mock API/message/mail 只写 outbox，不执行真实外发。
+- 本地 API/message/mail 只写 outbox，不执行真实外发。
 - CLI 支持 `interactive` 和 `interactive-all` 两种人工确认模式；Dashboard 目前只展示日志，不提供 Web 审批按钮。
 - 没有实现生产级 sandbox、容器隔离、多用户权限系统和大型数据库。
 - 数据集是人工构造和脚本扩充的对抗样本，评估结果代表当前样本集上的效果。
