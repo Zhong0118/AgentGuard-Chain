@@ -1,7 +1,8 @@
 """Mini-Agent 的结构化执行循环。
 
-P1 的 Mini-Agent 仍然是 scripted mode，不调用 LLM。
-但它已经具备完整 agentic loop：planner -> guard -> tool executor -> audit -> summary。
+MiniAgent 的核心循环不关心 planner 是 scripted 还是 LLM。
+只要 planner 输出结构化 tool_calls，后续都会进入同一条安全链路：
+planner -> guard -> approval -> tool executor -> result inspection -> audit -> summary。
 """
 
 from __future__ import annotations

@@ -1,11 +1,13 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from dataclasses import dataclass
 from pathlib import Path
 
 from agents.corecoder_guarded_runner import (
     RealLLMConfigError,
+    _create_real_llm,
     format_summary_json,
     run_corecoder_real_llm_guarded,
     run_corecoder_scripted_demo,
@@ -130,6 +132,20 @@ class CoreCoderGuardedRunnerTests(unittest.TestCase):
                     llm_factory=lambda **kwargs: _FakeLLM(**kwargs),
                     agent_factory=lambda llm, max_context_tokens: _FakeCoreCoderAgent(llm),
                 )
+
+    def test_real_llm_dependency_error_is_actionable(self):
+        original_import = __import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "corecoder.llm":
+                raise ImportError("No module named openai")
+            return original_import(name, globals, locals, fromlist, level)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            with self.assertRaises(RealLLMConfigError) as ctx:
+                _create_real_llm(_FakeConfig())
+
+        self.assertIn("requires the CoreCoder LLM dependencies", str(ctx.exception))
 
 
 if __name__ == "__main__":

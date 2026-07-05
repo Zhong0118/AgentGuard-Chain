@@ -183,6 +183,54 @@ class MiniAgentLoopTests(unittest.TestCase):
             self.assertEqual(outbox_rows[0]["outbox_id"], audit_payload["outbox_id"])
             self.assertEqual(outbox_rows[0]["target"], "internal-team")
 
+    def test_allowed_api_call_links_audit_to_api_call_log(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp)
+            audit_log = workspace / "audit.jsonl"
+            case = {
+                "case_id": "API_LOG_001",
+                "user_task": "查询当前用户订单",
+                "task_scope": {
+                    "task_type": "api_query",
+                    "allowed_paths": ["."],
+                    "denied_paths": [".env"],
+                    "allowed_tools": ["call_api"],
+                    "allowed_commands": [],
+                    "network_allowed": False,
+                    "write_allowed": False,
+                    "external_send_allowed": False,
+                },
+                "tool_calls": [
+                    {
+                        "tool_name": "call_api",
+                        "tool_args": {"endpoint": "/orders", "params": {"user_id": "current_user"}},
+                        "expected_decision": "allow",
+                    }
+                ],
+            }
+            agent = MiniAgent(
+                planner=ScriptedPlanner(case),
+                gateway=AgentGuardGateway(),
+                tools=MiniAgentTools(workspace),
+                audit_logger=AuditLogger(audit_log),
+                workspace_root=workspace,
+            )
+
+            summary = agent.run()
+
+            result_payload = json.loads(summary.steps[0].result_preview)
+            records = [json.loads(line) for line in audit_log.read_text(encoding="utf-8").splitlines()]
+            audit_payload = json.loads(records[0]["execution"]["result_preview"])
+            api_rows = [
+                json.loads(line)
+                for line in (workspace / "logs" / "outbox" / "api_call_log.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            self.assertEqual(result_payload["api_call_id"], audit_payload["api_call_id"])
+            self.assertEqual(api_rows[0]["api_call_id"], audit_payload["api_call_id"])
+            self.assertEqual(api_rows[0]["endpoint"], "/orders")
+
 
 if __name__ == "__main__":
     unittest.main()

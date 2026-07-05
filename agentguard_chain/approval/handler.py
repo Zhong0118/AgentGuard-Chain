@@ -10,7 +10,7 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Callable
 
-from agentguard_chain.decision import ALLOW, ASK
+from agentguard_chain.decision import ALLOW, ASK, DENY
 from agentguard_chain.event import GuardDecision, ToolCallEvent
 
 
@@ -32,10 +32,11 @@ class ApprovalRecord:
 class ApprovalHandler:
     """把 GuardDecision 转换成最终执行许可。
 
-    auto-* 模式用于批量评估；interactive 模式用于 CLI 演示人工确认。
+    auto-* 模式用于批量评估；interactive 模式用于 ask 人工确认。
+    interactive-all 模式用于演示“每个非硬阻断工具调用都由用户确认”。
     """
 
-    VALID_MODES = {"auto-deny", "auto-allow", "interactive"}
+    VALID_MODES = {"auto-deny", "auto-allow", "interactive", "interactive-all"}
 
     def __init__(
         self,
@@ -51,6 +52,26 @@ class ApprovalHandler:
         self.output_func = output_func or print
 
     def resolve(self, event: ToolCallEvent, decision: GuardDecision) -> ApprovalRecord:
+        if decision.decision == DENY:
+            return ApprovalRecord(
+                required=False,
+                mode="none",
+                decision="hard_denied",
+                execute=False,
+                reason="deny decisions are hard-blocked by AgentGuard",
+            )
+
+        if self.mode == "interactive-all":
+            approved = self._ask_user(event, decision)
+            return ApprovalRecord(
+                required=True,
+                mode=self.mode,
+                decision="user_approved" if approved else "user_denied",
+                execute=approved,
+                operator="cli",
+                reason=_approval_reason(event, decision, approved=approved),
+            )
+
         if decision.decision != ASK:
             return ApprovalRecord(
                 required=False,
@@ -91,7 +112,7 @@ class ApprovalHandler:
     def _ask_user(self, event: ToolCallEvent, decision: GuardDecision) -> bool:
         """在命令行展示 ask 风险，并把 y/yes 视为批准。"""
         self.output_func("")
-        self.output_func("AgentGuard approval required")
+        self.output_func("AgentGuard approval requested")
         self.output_func(f"Tool: {event.tool_name}")
         self.output_func(f"Args: {json.dumps(event.tool_args, ensure_ascii=False)}")
         self.output_func(f"Risk level: {decision.risk_level} ({decision.risk_score:.2f})")

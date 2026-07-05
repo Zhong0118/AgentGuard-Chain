@@ -236,7 +236,14 @@ def _create_real_llm(config: Any, *, llm_factory: Any | None = None) -> Any:
         )
 
     _ensure_corecoder_on_path()
-    from corecoder.llm import LLM, LiteLLM
+    try:
+        from corecoder.llm import LLM, LiteLLM
+    except ImportError as exc:
+        raise RealLLMConfigError(
+            "CoreCoder real LLM mode requires the CoreCoder LLM dependencies. "
+            "Install the OpenAI SDK for OpenAI-compatible providers, or install litellm and set "
+            "CORECODER_PROVIDER=litellm for LiteLLM providers."
+        ) from exc
 
     llm_cls = LiteLLM if getattr(config, "provider", "openai") == "litellm" else LLM
     return llm_cls(
@@ -359,9 +366,9 @@ def main() -> None:
     parser.add_argument("--audit-log", default="logs/corecoder_guarded_audit.jsonl")
     parser.add_argument(
         "--approval-mode",
-        choices=["auto-deny", "auto-allow", "interactive"],
+        choices=["auto-deny", "auto-allow", "interactive", "interactive-all"],
         default="auto-deny",
-        help="How to handle ask decisions in guarded CoreCoder mode.",
+        help="How to handle guarded tool execution. interactive handles ask; interactive-all asks for every non-deny call.",
     )
     args = parser.parse_args()
 

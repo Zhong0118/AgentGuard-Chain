@@ -7,6 +7,28 @@ from agents.miniagent.tools import MiniAgentTools
 
 
 class MiniAgentOutboxToolTests(unittest.TestCase):
+    def test_call_api_writes_api_call_log_with_id(self):
+        with tempfile.TemporaryDirectory() as temp:
+            workspace = Path(temp)
+            tools = MiniAgentTools(workspace)
+
+            result = tools.call_api("/orders", {"user_id": "current_user"})
+
+            payload = json.loads(result)
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["channel"], "api")
+            self.assertTrue(payload["api_call_id"].startswith("api-"))
+            self.assertEqual(payload["endpoint"], "/orders")
+            self.assertEqual(payload["user_id"], "current_user")
+
+            log_path = workspace / "logs" / "outbox" / "api_call_log.jsonl"
+            rows = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["api_call_id"], payload["api_call_id"])
+            self.assertEqual(rows[0]["endpoint"], "/orders")
+            self.assertEqual(rows[0]["params"], {"user_id": "current_user"})
+            self.assertTrue(rows[0]["mocked"])
+
     def test_send_message_writes_file_outbox_with_id(self):
         with tempfile.TemporaryDirectory() as temp:
             workspace = Path(temp)

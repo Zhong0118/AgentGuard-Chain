@@ -7,15 +7,47 @@
 ```text
 P0：安全网关核心已可运行。
 P1：MiniAgent scripted 原型已接入 AgentGuard，并能批量评估样本。
+P2：MiniAgent LLM mode 已可通过 OpenAI-compatible API 生成 JSON tool_calls。
 P1+：CoreCoder guarded scripted demo 已可运行，不需要 API key。
-P1+：CoreCoder guarded real LLM runner 已可运行，需要 API key。
+P1+：CoreCoder guarded real LLM runner 已可运行，需要 API key；当前验证记录见 docs/validation.md。
 P1+：工具结果内容审查和输出脱敏已接入 MiniAgent / CoreCoder guarded wrapper。
 P1+：ask 审批流已支持 auto-deny / auto-allow / interactive，并写入审计日志。
+P1+：interactive-all 可对每个非 deny 工具调用进行 CLI 人工确认。
 CoreCoder：原生 CLI 不会自动接入 AgentGuard；必须使用 guarded runner 或修改执行入口。
-LLM：当前 MiniAgent 不调用 LLM；CoreCoder guarded 支持 scripted 与 real 两种模式。
-Dashboard：已有基础 Streamlit 页面和数据整理函数，但还未做最终演示打磨。
+LLM：MiniAgent 支持 scripted / llm 两种模式；CoreCoder guarded 支持 scripted / real 两种模式。
+Dashboard：已有基础 Streamlit 页面，能展示审计日志、风险链、审批记录和业务 outbox。
+P2：LLM risk explainer 已支持 template / OpenAI-compatible LLM 两种模式，只做解释不参与硬决策。
+DeepSeek：已使用 deepseek-v4-flash 完成 MiniAgent LLM、CoreCoder real guarded、Risk Explainer 三项真实 API 验证，记录见 docs/validation.md。
 行为链：已同时输出 chain_alerts 和结构化 chain_graphs。
 输入审查：InputInspector 已接入 MiniAgent 和 CoreCoder guarded wrapper。
+```
+
+## 0. 入口脚本总表
+
+当前文件名基本可以保留，不建议为了整齐强行大改。更稳的做法是明确每个入口的职责：
+
+| 入口 | 类型 | 作用 |
+| --- | --- | --- |
+| `agents/miniagent/run_case.py` | MiniAgent 主入口 | 支持 `scripted` / `llm` 两种模式，是 MiniAgent 演示和单次运行入口。 |
+| `experiments/run_miniagent_cases.py` | 兼容包装入口 | 调用 `agents/miniagent/run_case.py`，用于批量 scripted 数据集评估。 |
+| `agents/corecoder_guarded_runner.py` | CoreCoder guarded 入口 | 以 scripted 或 real LLM 方式运行 CoreCoder，并在工具执行前接入 AgentGuard。 |
+| `experiments/run_p0_cases.py` | P0 评估入口 | 只重放 P0 smoke cases，用于验证最小规则框架。 |
+| `experiments/evaluate_p1_v2.py` | P1/P2 消融评估入口 | 对比 baseline、input_only、tool_guard、full_guard 等防线组合。 |
+| `experiments/explain_audit_log.py` | 解释生成入口 | 读取审计日志，生成 template 或 LLM 风险解释。 |
+| `experiments/generate_demo_data.py` | 演示数据入口 | 生成干净的离线演示日志，可选择追加真实 LLM 日志。 |
+| `dashboard/app.py` | Dashboard 入口 | 用 Streamlit 展示审计日志、指标、风险链、审批和 outbox。 |
+
+约定：
+
+```text
+agentguard_chain/ 只放可复用防护框架。
+agents/           放被防护的 Agent 和 Agent 适配入口。
+experiments/      放评估、数据生成、解释生成等实验脚本。
+dashboard/        放展示层。
+docs/             放当前有效文档。
+docs/archive/     放历史计划和旧验证记录。
+artifacts/        放稳定演示和评估产物。
+logs/、tmp/       只放本地运行时文件，不纳入版本交付。
 ```
 
 ## 1. 当前系统结构
@@ -56,7 +88,12 @@ agentguard_chain/audit/logger.py
 
 ### 1.2 MiniAgent 当前链路
 
-MiniAgent 已经接入 AgentGuard，当前是 scripted mode，不调用 LLM。
+MiniAgent 已经接入 AgentGuard，当前有两种模式：
+
+```text
+scripted mode：读取 JSONL 中的预设 tool_calls，用于稳定评估。
+llm mode：调用 OpenAI-compatible API 生成 JSON tool_calls，用于真实 LLM Agent 演示。
+```
 
 ```text
 datasets/p1_scripted_cases.jsonl
@@ -79,6 +116,24 @@ OutputRedactor 对敏感结果脱敏
 AuditLogger 写入 logs/*.jsonl
     ↓
 MiniAgentSummary 汇总每一步结果
+```
+
+LLM mode 链路：
+
+```text
+用户 prompt
+    ↓
+LLMPlanner
+    ↓
+OpenAI-compatible chat completion
+    ↓
+严格 JSON: {"tool_calls":[...]}
+    ↓
+MiniAgent.run()
+    ↓
+AgentGuardGateway.evaluate(event)
+    ↓
+Tool Executor / AuditLogger / Dashboard
 ```
 
 相关代码：
@@ -107,7 +162,7 @@ send_mail
 其中：
 
 ```text
-call_api      只返回固定 JSON 字符串
+call_api      返回固定 JSON 字符串，同时落盘到 logs/outbox/api_call_log.jsonl
 send_message 写入内存列表，同时落盘到 logs/outbox/message_outbox.jsonl
 send_mail    写入内存列表，同时落盘到 logs/outbox/mail_outbox.jsonl
 ```
@@ -202,11 +257,11 @@ python -m experiments.run_miniagent_cases --dataset datasets/p1_scripted_cases.j
 
 ```json
 {
-  "total_calls": 61,
-  "correct_calls": 61,
-  "attack_cases": 35,
-  "normal_cases": 26,
-  "detected_attacks": 35,
+  "total_calls": 228,
+  "correct_calls": 228,
+  "attack_cases": 114,
+  "normal_cases": 114,
+  "detected_attacks": 114,
   "false_positives": 0,
   "false_negatives": 0,
   "accuracy": 1.0,
@@ -234,6 +289,56 @@ delete_file 中风险操作 -> ask -> approval
 输入提示注入 -> input_findings 审计标注
 ```
 
+## 3.1 运行 MiniAgent LLM mode
+
+LLM mode 用于演示“真实 LLM 生成工具调用”，不用于检测率评估。
+
+配置 OpenAI-compatible API：
+
+```powershell
+$env:MINIAGENT_API_KEY="你的 API key"
+$env:MINIAGENT_BASE_URL="https://api.openai.com/v1"
+$env:MINIAGENT_MODEL="gpt-4o-mini"
+```
+
+也可以复用：
+
+```text
+OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL
+DEEPSEEK_API_KEY
+```
+
+运行：
+
+```powershell
+$env:PYTHONUTF8="1"
+python -m agents.miniagent.run_case --mode llm --prompt "请读取 workflow.md 并总结" --audit-log logs/p2_miniagent_llm_audit.jsonl --workspace-root . --approval-mode auto-deny
+```
+
+LLM 必须只输出 JSON：
+
+```json
+{"tool_calls":[{"tool_name":"read_file","tool_args":{"path":"workflow.md"}}]}
+```
+
+如果没有 API key，会输出：
+
+```json
+{
+  "mode": "llm",
+  "error": "No API key found. Set MINIAGENT_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY."
+}
+```
+
+注意：
+
+```text
+scripted mode 用于可复现评估。
+llm mode 用于真实 LLM 生成工具调用的演示。
+allow / ask / deny 仍由 AgentGuard 决定，不由 LLM 决定。
+模型必须输出严格 JSON；如果输出 Markdown 或自然语言，MiniAgent 会拒绝执行。
+```
+
 ## 4. 查看 P1 审计结果
 
 审计日志默认写入：
@@ -257,7 +362,7 @@ Get-Content logs/p1_miniagent_audit.jsonl -TotalCount 5
 如果使用当前 P1 数据集，应该是：
 
 ```text
-61
+228
 ```
 
 其中 `P1_051` 是输出审查样本：读取包含假密钥的调试文件，工具调用前允许执行，但工具结果会被发现并脱敏。审计日志中不应出现原始假密钥值。
@@ -288,9 +393,15 @@ execution.executed = true   工具已执行
 execution.executed = false  工具被阻断
 ```
 
-## 4.1 查看消息/邮件 outbox
+## 4.1 查看 API / 消息 / 邮件 outbox
 
-P1-16 已把 MiniAgent 的消息和邮件外发工具从纯内存 mock 改成文件化 outbox。
+P1-16 已把 MiniAgent 的 API、消息和邮件工具从纯内存/固定返回 mock 改成文件化 outbox。
+
+允许执行的 API 调用会写入：
+
+```text
+logs/outbox/api_call_log.jsonl
+```
 
 允许执行的内部消息会写入：
 
@@ -304,19 +415,19 @@ logs/outbox/message_outbox.jsonl
 logs/outbox/mail_outbox.jsonl
 ```
 
-每条 outbox 记录都有 `outbox_id`。工具执行结果和审计日志的 `execution.result_preview` 也会返回同一个 `outbox_id`，用于复盘时把：
+每条 message/mail outbox 记录都有 `outbox_id`，每条 API 调用记录都有 `api_call_id`。工具执行结果和审计日志的 `execution.result_preview` 也会返回同一个 id，用于复盘时把：
 
 ```text
 Agent 工具调用
     ↓
 AuditRecord
     ↓
-message/mail outbox
+api/message/mail outbox
 ```
 
 串起来。
 
-注意：这仍然不会真实外发消息或邮件，`delivered=false` 表示它只是本地可审计队列。
+注意：这仍然不会真实访问外部 API，也不会真实外发消息或邮件。API 记录里 `mocked=true`，消息/邮件记录里 `delivered=false`，表示它们只是本地可审计队列。
 
 ## 5. 运行测试
 
@@ -329,7 +440,7 @@ python -m unittest discover -s tests
 当前应通过：
 
 ```text
-Ran 47 tests
+Ran 55 tests
 OK
 ```
 
@@ -351,7 +462,60 @@ P1 v2 消融评估
 P0/P1 runner
 ```
 
-## 5.1 运行 P1 v2 消融评估
+## 5.1 生成干净演示数据
+
+P2-3 新增了统一演示数据生成入口。默认只运行离线可复现链路：
+
+```powershell
+$env:PYTHONUTF8="1"
+python -m experiments.generate_demo_data --workspace-root .
+```
+
+产出：
+
+```text
+logs/p1_miniagent_audit.jsonl
+logs/corecoder_guarded_audit.jsonl
+logs/p1_v2_eval.json
+logs/p2_explained_audit.jsonl
+logs/demo_manifest.json
+logs/outbox/api_call_log.jsonl
+logs/outbox/message_outbox.jsonl
+logs/outbox/mail_outbox.jsonl
+```
+
+`logs/demo_manifest.json` 会记录每一步是否完成、各日志路径和记录数量。
+
+如果需要保留一份不被后续运行覆盖的演示证据，可以把关键日志复制到：
+
+```text
+artifacts/demo/
+artifacts/eval/
+```
+
+当前项目已经整理了一份固化产物，说明见：
+
+```text
+artifacts/README.md
+```
+
+如果需要同时生成真实 LLM 日志：
+
+```powershell
+python -m experiments.generate_demo_data --workspace-root . --include-real-llm
+```
+
+这会额外尝试生成：
+
+```text
+logs/deepseek_miniagent_llm_audit.jsonl
+logs/deepseek_corecoder_real_audit.jsonl
+logs/deepseek_explained_audit.jsonl
+```
+
+真实 LLM 模式只从环境变量读取 API key，不会把 key 写入日志或文档。
+
+## 5.2 运行 P1 v2 消融评估
 
 P1 v2 用于对比不同防线组合的效果：
 
@@ -363,7 +527,7 @@ python -m experiments.evaluate_p1_v2 --dataset datasets/p1_scripted_cases.jsonl 
 
 ```text
 baseline              detection=0.0000  fpr=0.0000  fnr=1.0000
-input_only            detection=0.4000  fpr=0.0385  fnr=0.6000
+input_only            detection=0.5351  fpr=0.3772  fnr=0.4649
 tool_guard            detection=0.8571  fpr=0.0000  fnr=0.1429
 tool_chain            detection=1.0000  fpr=0.0000  fnr=0.0000
 tool_chain_result     detection=1.0000  fpr=0.0000  fnr=0.0000
@@ -373,13 +537,40 @@ full_guard            detection=1.0000  fpr=0.0000  fnr=0.0000
 `full_guard` 额外记录：
 
 ```text
-input_findings: 19
-output_findings: 2
-chain_graph_edges: 8
-approval_required: 1
+input_findings: 124
+output_findings: 21
+chain_graph_edges: 28
+approval_required: 10
 ```
 
-这说明输入审查不是主防线；工具调用前审查和行为链检测才是检测率提升的核心。
+这说明输入审查不是主防线；复杂自然语言上下文会带来更高误报，工具调用前审查和行为链检测才是检测率提升的核心。
+
+## 5.3 生成风险解释日志
+
+P2 的 LLM risk explainer 用于把 `GuardDecision`、`matched_rules`、`chain_graphs` 转成中文解释。
+
+默认 template 模式不需要 API key：
+
+```powershell
+python -m experiments.explain_audit_log --input logs/p1_miniagent_audit.jsonl --output logs/p2_explained_audit.jsonl --mode template
+```
+
+如果要使用 OpenAI-compatible LLM：
+
+```powershell
+$env:AGENTGUARD_EXPLAINER_API_KEY="你的 API key"
+$env:AGENTGUARD_EXPLAINER_BASE_URL="https://api.openai.com/v1"
+$env:AGENTGUARD_EXPLAINER_MODEL="gpt-4o-mini"
+python -m experiments.explain_audit_log --input logs/p1_miniagent_audit.jsonl --output logs/deepseek_explained_audit.jsonl --mode llm
+```
+
+注意：
+
+```text
+解释文本会写入 decision.llm_explanation。
+LLM explainer 只做审计解释，不改变 allow / ask / deny。
+没有 API key 时，使用 template 模式即可稳定生成演示材料。
+```
 
 ## 6. 运行 Dashboard
 
@@ -409,37 +600,69 @@ http://127.0.0.1:8501
 Streamlit is not installed. Install streamlit to run dashboard/app.py.
 ```
 
-当前 Dashboard 默认会读取两类日志：
+当前 Dashboard 默认会读取五类审计日志：
 
 ```text
 logs/p1_miniagent_audit.jsonl
 logs/corecoder_guarded_audit.jsonl
+logs/p2_explained_audit.jsonl
+logs/deepseek_miniagent_llm_audit.jsonl
+logs/deepseek_corecoder_real_audit.jsonl
+logs/deepseek_explained_audit.jsonl
+```
+
+也会读取三类本地业务 outbox：
+
+```text
+logs/outbox/api_call_log.jsonl
+logs/outbox/message_outbox.jsonl
+logs/outbox/mail_outbox.jsonl
 ```
 
 如果这两份日志都存在，当前示例数据应展示：
 
 ```text
-总记录数：64
-MiniAgent：61 条，source=miniagent-scripted，execution_mode=mock-tools
+总记录数：231
+MiniAgent：228 条，source=miniagent-scripted，execution_mode=mock-tools
 CoreCoder：3 条，source=corecoder-guarded-demo，execution_mode=scripted-llm
-输入审查发现：19 条
-行为链告警：8 条
-行为链图谱边：8 条
-输出审查发现：2 条
-审批记录：1 条
+输入审查发现：88 条
+行为链告警：28 条
+行为链图谱边：28 条
+输出审查发现：20 条
+审批记录：10 条
+Business Tool Outbox：36 条
 ```
 
 页面展示：
 
 ```text
 allow / ask / deny 数量
+真实 LLM 调用数
+风险解释数
+行为链告警数
+工具结果发现数
+审批记录数
 Agent / source 统计
 工具调用时间线
+单条审计详情
 输入审查发现
 输出审查发现
 审批记录
+风险解释
 行为链告警
 行为链图谱
+Business Tool Outbox
+```
+
+P2-2 Dashboard 已支持：
+
+```text
+左侧配置日志源
+按 source / decision / risk_level / tool 筛选
+只看 executed 记录
+只看带风险解释的记录
+只看带行为链告警的记录
+单条工具调用详情视图，适合截图和答辩讲解
 ```
 
 当前 Dashboard 会显式标记：
@@ -458,12 +681,12 @@ corecoder-guarded-demo   execution_mode = scripted-llm
 | 模块 | 当前状态 | 是否真实外部系统 | 后续替换方向 |
 |---|---|---:|---|
 | MiniAgent planner | `ScriptedPlanner` 读取 JSONL | 否 | 增加 LLM planner mode |
-| MiniAgent `call_api` | 返回固定 JSON 字符串 | 否 | 本地 FastAPI mock server / API proxy |
+| MiniAgent `call_api` | 写入 `logs/outbox/api_call_log.jsonl` | 否 | 本地 FastAPI mock server / API proxy |
 | MiniAgent `send_message` | 写入 `logs/outbox/message_outbox.jsonl` | 否 | 本地消息队列 / webhook sandbox |
 | MiniAgent `send_mail` | 写入 `logs/outbox/mail_outbox.jsonl` | 否 | SMTP sandbox |
 | CoreCoder guarded scripted demo | `ScriptedCoreCoderLLM` 生成 tool_call | 否 | 离线稳定演示 |
 | CoreCoder guarded real LLM runner | CoreCoder LLM 真实生成 tool_call | 是 | 需要 API key / base_url |
-| Dashboard | 读取 JSONL 静态日志 | 半真实 | 加刷新、筛选、演示截图 |
+| Dashboard | 读取审计 JSONL 和 outbox JSONL | 半真实 | 加刷新、筛选、演示截图 |
 
 当前这些 mock/demo 不是“没用”，它们的作用是：
 
@@ -562,19 +785,27 @@ CORECODER_MODEL
 CORECODER_PROVIDER
 ```
 
+CoreCoder real LLM mode 还需要安装 OpenAI SDK：
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+如果使用 `CORECODER_PROVIDER=litellm`，还需要额外安装 `litellm`。
+
 示例：
 
 ```powershell
 $env:OPENAI_API_KEY="你的 API key"
 $env:OPENAI_BASE_URL="https://api.deepseek.com"
-$env:CORECODER_MODEL="deepseek-chat"
-python -m agents.corecoder_guarded_runner --mode real --prompt "请总结 workflow.md" --audit-log logs/corecoder_real_guarded_audit.jsonl --workspace-root . --approval-mode auto-deny
+$env:CORECODER_MODEL="deepseek-v4-flash"
+python -m agents.corecoder_guarded_runner --mode real --prompt "请总结 workflow.md" --audit-log logs/deepseek_corecoder_real_audit.jsonl --workspace-root . --approval-mode auto-deny
 ```
 
 如果希望真实 CoreCoder 工具调用遇到 `ask` 时暂停等待人工确认，可以把审批模式改成：
 
 ```powershell
-python -m agents.corecoder_guarded_runner --mode real --prompt "请总结 workflow.md" --audit-log logs/corecoder_real_guarded_audit.jsonl --workspace-root . --approval-mode interactive
+python -m agents.corecoder_guarded_runner --mode real --prompt "请总结 workflow.md" --audit-log logs/deepseek_corecoder_real_audit.jsonl --workspace-root . --approval-mode interactive
 ```
 
 如果没有 API key，会输出清晰错误：
@@ -584,6 +815,20 @@ python -m agents.corecoder_guarded_runner --mode real --prompt "请总结 workfl
   "mode": "real",
   "error": "No API key found. Set OPENAI_API_KEY, CORECODER_API_KEY, or DEEPSEEK_API_KEY."
 }
+```
+
+阶段二验证记录：
+
+```text
+docs/validation.md
+```
+
+当前准确状态：
+
+```text
+scripted CoreCoder 链路已实测；
+real LLM runner 入口和无 key 错误路径已实测；
+真实联网 LLM 调用需要本地 API key 后再运行。
 ```
 
 重要区别：
@@ -627,7 +872,7 @@ python -m corecoder -p "请总结当前项目"
 cd agents/CoreCoder
 $env:OPENAI_API_KEY="你的 API key"
 $env:OPENAI_BASE_URL="https://api.deepseek.com"
-$env:CORECODER_MODEL="deepseek-chat"
+$env:CORECODER_MODEL="deepseek-v4-flash"
 python -m corecoder -p "请总结当前项目"
 ```
 
@@ -712,7 +957,8 @@ deny 直接阻断
 当前状态：
 
 ```text
-MiniAgent scripted mode：不介入 LLM。
+MiniAgent scripted mode：不介入 LLM，用于稳定评估。
+MiniAgent llm mode：会介入真实 LLM，用于工具调用演示。
 CoreCoder 原生运行：会介入 LLM。
 CoreCoder guarded scripted demo：使用脚本化 LLM，不需要 API key。
 CoreCoder guarded real LLM runner：会介入真实 LLM，需要 API key。
@@ -729,7 +975,7 @@ CoreCoder guarded real LLM runner：会介入真实 LLM，需要 API key。
 后续 LLM 应该放到两处：
 
 ```text
-1. MiniAgent llm mode
+1. MiniAgent llm mode（已完成）
    LLM 根据用户输入生成 tool_calls，再交给 AgentGuard 审查。
 
 2. CoreCoder guarded demo
@@ -760,7 +1006,7 @@ P1 核心工程闭环已经完成，但还不是最终展示级。
 理由：
 
 ```text
-P2 是 MiniAgent LLM mode、解释器、报告/PPT 等加分项。
+P2 是 LLM risk explainer、报告/PPT、Dashboard 演示打磨等加分项。
 P1 里 CoreCoder guarded real LLM runner 已完成，Dashboard 展示仍需要比赛演示打磨。
 如果现在直接做 P2，项目会变成“MiniAgent scripted 很完整，但真实 Agent 接入偏虚”。
 ```
@@ -773,9 +1019,10 @@ P1+ 第二步：准备 CoreCoder 演示样例和日志（已完成 scripted demo
 P1+ 第三步：CoreCoder guarded real LLM runner（已完成，需要 API key 才能真实运行）
 P1+ 第四步：验证 Dashboard 能展示 CoreCoder/MiniAgent 日志
 P1+ 第五步：CLI interactive approval（已完成），把 ask 从自动模式扩展到人工确认
-P2 第一步：MiniAgent llm mode 或 LLM risk explainer
-P2 第二步：Web pending approval
-P2 第三步：报告和 PPT
+P2 第一步：MiniAgent llm mode（已完成）
+P2 第二步：LLM risk explainer
+P2 第三步：Web pending approval
+P2 第四步：报告和 PPT
 ```
 
 一句话：

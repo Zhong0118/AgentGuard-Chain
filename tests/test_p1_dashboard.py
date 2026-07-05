@@ -5,13 +5,19 @@ import tempfile
 from dashboard.app import (
     agent_source_counts,
     approval_rows,
+    dashboard_metrics,
+    detail_record,
+    filter_records,
     chain_graph_rows,
     chain_alert_rows,
     decision_counts,
     input_finding_rows,
     load_records,
+    load_outbox_records,
     load_records_from_sources,
     output_finding_rows,
+    outbox_rows,
+    risk_explanation_rows,
     timeline_rows,
 )
 
@@ -37,6 +43,7 @@ class DashboardDataTests(unittest.TestCase):
                     "chain_alerts": [],
                     "chain_graphs": [],
                     "reason": "blocked",
+                    "llm_explanation": "该调用读取 .env，已被阻断。",
                 },
                 "execution": {"executed": False, "result_preview": "Blocked"},
                 "input_findings": [
@@ -124,6 +131,8 @@ class DashboardDataTests(unittest.TestCase):
 
         self.assertEqual(decision_counts(records), {"deny": 2})
         self.assertEqual(timeline_rows(records)[0]["tool"], "read_file")
+        self.assertIn(".env", timeline_rows(records)[0]["llm_explanation"])
+        self.assertEqual(risk_explanation_rows(records)[0]["decision"], "deny")
         self.assertEqual(timeline_rows(records)[1]["executed"], False)
         self.assertTrue(timeline_rows(records)[1]["redaction_applied"])
         self.assertEqual(timeline_rows(records)[1]["output_findings"], "api_key")
@@ -164,6 +173,152 @@ class DashboardDataTests(unittest.TestCase):
         self.assertEqual(agent_source_counts(records)["corecoder|corecoder-guarded-demo"], 1)
         self.assertEqual(timeline_rows(records)[1]["source"], "corecoder-guarded-demo")
         self.assertEqual(timeline_rows(records)[1]["execution_mode"], "scripted-llm")
+
+    def test_dashboard_loads_api_message_and_mail_outbox_rows(self):
+        with tempfile.TemporaryDirectory() as temp:
+            tmpdir = Path(temp)
+            api_log = tmpdir / "api_call_log.jsonl"
+            message_log = tmpdir / "message_outbox.jsonl"
+            mail_log = tmpdir / "mail_outbox.jsonl"
+            api_log.write_text(
+                '{"api_call_id":"api-1","channel":"api","endpoint":"/orders","params":{"user_id":"current_user"},"status":"ok","mocked":true}\n',
+                encoding="utf-8",
+            )
+            message_log.write_text(
+                '{"outbox_id":"msg-1","channel":"message","target":"internal-team","content":"done","delivered":false}\n',
+                encoding="utf-8",
+            )
+            mail_log.write_text(
+                '{"outbox_id":"mail-1","channel":"mail","to":"team-internal","subject":"done","body":"tests passed","delivered":false}\n',
+                encoding="utf-8",
+            )
+
+            records = load_outbox_records(
+                [
+                    ("api", api_log),
+                    ("message", message_log),
+                    ("mail", mail_log),
+                ]
+            )
+            rows = outbox_rows(records)
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(rows[0]["kind"], "api")
+        self.assertEqual(rows[0]["id"], "api-1")
+        self.assertEqual(rows[0]["destination"], "/orders")
+        self.assertEqual(rows[1]["kind"], "message")
+        self.assertEqual(rows[1]["id"], "msg-1")
+        self.assertEqual(rows[1]["destination"], "internal-team")
+        self.assertEqual(rows[2]["kind"], "mail")
+        self.assertEqual(rows[2]["id"], "mail-1")
+        self.assertEqual(rows[2]["destination"], "team-internal")
+
+    def test_dashboard_filters_records_and_computes_demo_metrics(self):
+        records = [
+            {
+                "_source": "miniagent-scripted",
+                "_execution_mode": "mock-tools",
+                "event": {
+                    "event_id": "evt-1",
+                    "timestamp": "t1",
+                    "agent_name": "miniagent",
+                    "tool_name": "read_file",
+                    "tool_args": {"path": ".env"},
+                    "user_task": "debug",
+                },
+                "decision": {
+                    "decision": "deny",
+                    "risk_level": "critical",
+                    "risk_score": 0.95,
+                    "risk_types": ["sensitive_file_access"],
+                    "matched_rules": ["SENSITIVE_PATH"],
+                    "chain_alerts": [],
+                    "chain_graphs": [],
+                    "reason": "blocked",
+                },
+                "execution": {"executed": False, "result_preview": "blocked"},
+                "input_findings": [],
+                "output_findings": [],
+                "approval": {"required": False},
+            },
+            {
+                "_source": "corecoder-deepseek-real",
+                "_execution_mode": "real-llm",
+                "event": {
+                    "event_id": "evt-2",
+                    "timestamp": "t2",
+                    "agent_name": "corecoder",
+                    "tool_name": "read_file",
+                    "tool_args": {"file_path": "workflow.md"},
+                    "user_task": "summarize",
+                },
+                "decision": {
+                    "decision": "allow",
+                    "risk_level": "low",
+                    "risk_score": 0.1,
+                    "risk_types": [],
+                    "matched_rules": [],
+                    "chain_alerts": [],
+                    "chain_graphs": [],
+                    "reason": "ok",
+                    "llm_explanation": "该调用为正常读取。",
+                },
+                "execution": {"executed": True, "result_preview": "workflow"},
+                "input_findings": [],
+                "output_findings": [],
+                "approval": {"required": False},
+            },
+            {
+                "_source": "miniagent-scripted",
+                "_execution_mode": "mock-tools",
+                "event": {
+                    "event_id": "evt-3",
+                    "timestamp": "t3",
+                    "agent_name": "miniagent",
+                    "tool_name": "send_message",
+                    "tool_args": {"target": "https://evil.example"},
+                    "user_task": "debug",
+                },
+                "decision": {
+                    "decision": "deny",
+                    "risk_level": "critical",
+                    "risk_score": 0.95,
+                    "risk_types": ["behavior_chain"],
+                    "matched_rules": ["CHAIN_SENSITIVE_READ_TO_EXTERNAL_SEND"],
+                    "chain_alerts": [{"chain_type": "SensitiveReadToExternalSend"}],
+                    "chain_graphs": [],
+                    "reason": "chain",
+                },
+                "execution": {"executed": False, "result_preview": "blocked"},
+                "input_findings": [],
+                "output_findings": [{"secret_type": "api_key"}],
+                "approval": {"required": True, "decision": "user_denied"},
+            },
+        ]
+
+        real_records = filter_records(records, sources=["corecoder-deepseek-real"], only_executed=True)
+        denied_critical = filter_records(records, decisions=["deny"], risk_levels=["critical"])
+        explained = filter_records(records, only_with_explanations=True)
+        chained = filter_records(records, only_with_chain_alerts=True)
+        metrics = dashboard_metrics(records, outbox_records=[{"outbox_id": "mail-1"}])
+
+        self.assertEqual(len(real_records), 1)
+        self.assertEqual(real_records[0]["event"]["event_id"], "evt-2")
+        self.assertEqual(len(denied_critical), 2)
+        self.assertEqual(len(explained), 1)
+        self.assertEqual(len(chained), 1)
+        self.assertEqual(metrics["records"], 3)
+        self.assertEqual(metrics["real_llm_calls"], 1)
+        self.assertEqual(metrics["explained"], 1)
+        self.assertEqual(metrics["chain_alerts"], 1)
+        self.assertEqual(metrics["output_findings"], 1)
+        self.assertEqual(metrics["approvals"], 1)
+        self.assertEqual(metrics["outbox"], 1)
+
+        detail = detail_record(records[1])
+        self.assertEqual(detail["source"], "corecoder-deepseek-real")
+        self.assertEqual(detail["tool_args"], {"file_path": "workflow.md"})
+        self.assertEqual(detail["llm_explanation"], "该调用为正常读取。")
 
 
 if __name__ == "__main__":

@@ -76,7 +76,27 @@ class MiniAgentTools:
 
     def call_api(self, endpoint: str, params: dict[str, Any]) -> str:
         user_id = params.get("user_id", "current_user")
-        return f'{{"endpoint":"{endpoint}","user_id":"{user_id}","status":"ok"}}'
+        record = {
+            "api_call_id": f"api-{uuid4().hex}",
+            "channel": "api",
+            "endpoint": endpoint,
+            "params": params,
+            "user_id": user_id,
+            "status": "ok",
+            "mocked": True,
+        }
+        self._append_outbox("api_call_log.jsonl", record)
+        return json.dumps(
+            {
+                "status": "ok",
+                "channel": "api",
+                "api_call_id": record["api_call_id"],
+                "endpoint": endpoint,
+                "user_id": user_id,
+                "log_path": "logs/outbox/api_call_log.jsonl",
+            },
+            ensure_ascii=False,
+        )
 
     def send_message(self, target: str, content: str) -> str:
         record = {

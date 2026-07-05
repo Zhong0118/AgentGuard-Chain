@@ -123,18 +123,20 @@ P1-8 ResultInspector
 P1-9 OutputRedactor
 P1-12 Audit Schema v2 的 output_findings / redaction 最小兼容扩展
 P1-13 Dashboard output_findings / redaction 展示
+P1-13 Dashboard business outbox 展示：API/message/mail 本地队列已接入 Dashboard
 P1-10 ApprovalFlow 自动审批模式：auto-deny / auto-allow
 P1-10 ApprovalFlow CLI interactive：命令行人工确认 ask 操作
 P1-11 ChainGraph：chain_id / nodes / edges 结构化风险链
 P1-7 InputInspector：提示注入、敏感读取、外发请求输入标注
 P1-15 Evaluation v2：baseline / input-only / tool-guard / tool+chain / tool+result / full guard 消融评估
 
-仍未完成：
-P1-16 真实业务工具替换路线第二阶段：`call_api` 尚未服务化，message/mail 目前是本地 outbox
-
 已完成但受环境限制：
 P1-14 CoreCoder Real LLM Guarded 的入口和配置校验已完成；真实联网调用需要 API key / base_url
-P1-16 第一阶段：`send_message` / `send_mail` 已写入文件化 outbox，并通过 outbox_id 关联审计日志
+P1-16：`call_api` / `send_message` / `send_mail` 已写入文件化 outbox，并通过 api_call_id / outbox_id 关联审计日志
+
+仍未完成：
+P1-16 可选增强：本地 mock API server / webhook sandbox / SMTP sandbox 尚未服务化
+P1-13 可选增强：Dashboard 筛选、刷新、截图演示尚未打磨
 ```
 
 | 阶段 | 任务 | 目标 | 产出 | 验收标准 |
@@ -559,7 +561,7 @@ GuardedCoreCoderAgent 包装
 MiniAgent 业务工具是 mock：
 
 ```text
-call_api -> 固定 JSON
+call_api -> logs/outbox/api_call_log.jsonl
 send_message -> logs/outbox/message_outbox.jsonl
 send_mail -> logs/outbox/mail_outbox.jsonl
 ```
@@ -571,25 +573,28 @@ send_mail -> logs/outbox/mail_outbox.jsonl
 当前第一阶段已经完成：
 
 ```text
+api_call_log.jsonl：模拟 API 网关调用记录
 message_outbox.jsonl：模拟消息队列
 mail_outbox.jsonl：模拟邮件 outbox
-工具返回 outbox_id，审计日志 result_preview 可关联 outbox 记录
+工具返回 api_call_id / outbox_id，审计日志 result_preview 可关联 outbox 记录
 ```
 
-如果时间允许，优先替换成本地可控服务：
+如果时间允许，可以进一步替换成本地可控服务：
 
 ```text
 mock_api_server.py：FastAPI 或 http.server
-api_call_log.jsonl：模拟 API 网关调用记录
+webhook_outbox.jsonl：模拟 webhook sandbox
+maildev / SMTP sandbox：模拟邮件系统
 ```
 
 ### 11.3 验收标准
 
 ```text
-工具调用产生文件化 outbox（message/mail 已完成）
-审计日志能关联 outbox id（message/mail 已完成）
-不发生真实外发（message/mail 已完成）
-call_api 服务化或 API 调用日志化（待做）
+工具调用产生文件化 outbox（api/message/mail 已完成）
+审计日志能关联 api_call_id / outbox_id（api/message/mail 已完成）
+不发生真实外发（api/message/mail 已完成）
+call_api 调用日志化（已完成）
+本地服务化 mock API / webhook / SMTP（可选增强）
 ```
 
 ---
@@ -704,7 +709,7 @@ P1-14 CoreCoder Real LLM Guarded
 
 ```text
 P1-16 真实业务工具替换路线
-把 call_api 从固定 JSON 改成 API 调用日志化，必要时再加本地 mock API server
+继续做 Dashboard 筛选/刷新/截图演示，或者进入 P2 的报告与解释层
 ```
 
 原因：

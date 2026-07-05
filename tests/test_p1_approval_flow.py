@@ -119,6 +119,52 @@ class ApprovalFlowTests(unittest.TestCase):
             self.assertEqual(result.decision, "user_denied")
             self.assertEqual(result.mode, "interactive")
 
+    def test_interactive_all_asks_for_allow_decision(self):
+        with tempfile.TemporaryDirectory() as temp:
+            event = self.make_event(Path(temp))
+            decision = GuardDecision(
+                event_id=event.event_id,
+                decision="allow",
+                risk_score=0.1,
+                risk_level="low",
+                risk_types=[],
+                matched_rules=[],
+            )
+
+            result = ApprovalHandler(
+                mode="interactive-all",
+                input_func=lambda prompt: "yes",
+                output_func=lambda text: None,
+            ).resolve(event, decision)
+
+            self.assertTrue(result.required)
+            self.assertTrue(result.execute)
+            self.assertEqual(result.decision, "user_approved")
+            self.assertEqual(result.mode, "interactive-all")
+
+    def test_deny_decision_is_hard_blocked_even_in_interactive_all(self):
+        with tempfile.TemporaryDirectory() as temp:
+            event = self.make_event(Path(temp))
+            decision = GuardDecision(
+                event_id=event.event_id,
+                decision="deny",
+                risk_score=0.95,
+                risk_level="critical",
+                risk_types=["sensitive_file_access"],
+                matched_rules=["SENSITIVE_PATH"],
+            )
+
+            result = ApprovalHandler(
+                mode="interactive-all",
+                input_func=lambda prompt: "yes",
+                output_func=lambda text: None,
+            ).resolve(event, decision)
+
+            self.assertFalse(result.required)
+            self.assertFalse(result.execute)
+            self.assertEqual(result.decision, "hard_denied")
+            self.assertEqual(result.mode, "none")
+
     def test_miniagent_records_approval_and_respects_auto_deny(self):
         with tempfile.TemporaryDirectory() as temp:
             workspace = Path(temp)
